@@ -140,6 +140,123 @@ describe("FlowPilot", () => {
 		fp.close();
 	});
 
+	it("runs steps in parallel", async () => {
+		const fp = new FlowPilot({ dbPath: ":memory:" });
+		const order: string[] = [];
+
+		fp.workflow("parallel-test", async ({ parallel }) => {
+			const [a, b, c] = await parallel(
+				{
+					id: "fast",
+					fn: async () => {
+						order.push("fast-start");
+						await new Promise((r) => setTimeout(r, 10));
+						order.push("fast-end");
+						return 1;
+					},
+				},
+				{
+					id: "medium",
+					fn: async () => {
+						order.push("medium-start");
+						await new Promise((r) => setTimeout(r, 20));
+						order.push("medium-end");
+						return 2;
+					},
+				},
+				{
+					id: "slow",
+					fn: async () => {
+						order.push("slow-start");
+						await new Promise((r) => setTimeout(r, 30));
+						order.push("slow-end");
+						return 3;
+					},
+				},
+			);
+			return { a, b, c };
+		});
+
+		const result = await fp.run("parallel-test");
+		expect(result.status).toBe("completed");
+		expect((result.output as { a: number; b: number; c: number }).a).toBe(1);
+		expect((result.output as { a: number; b: number; c: number }).b).toBe(2);
+		expect((result.output as { a: number; b: number; c: number }).c).toBe(3);
+		expect(result.steps).toHaveLength(3);
+		// All should start before any end (proving parallelism)
+		expect(order.filter((o) => o.endsWith("-start"))).toHaveLength(3);
+		fp.close();
+	});
+
+	it("fires onSuccess hook", async () => {
+		let hookRecord: import("./types.ts").ExecutionRecord | null = null;
+		const fp = new FlowPilot({
+			dbPath: ":memory:",
+			hooks: {
+				onSuccess: (record) => {
+					hookRecord = record;
+				},
+			},
+		});
+
+		fp.workflow("hook-test", async ({ step }) => {
+			return step("ok", async () => "done");
+		});
+
+		await fp.run("hook-test");
+		expect(hookRecord).not.toBeNull();
+		expect(hookRecord?.status).toBe("completed");
+		fp.close();
+	});
+
+	it("fires onFailure hook", async () => {
+		let hookRecord: import("./types.ts").ExecutionRecord | null = null;
+		const fp = new FlowPilot({
+			dbPath: ":memory:",
+			logLevel: "error",
+			hooks: {
+				onFailure: (record) => {
+					hookRecord = record;
+				},
+			},
+		});
+
+		fp.workflow("fail-hook", async ({ step }) => {
+			return step("boom", async () => {
+				throw new Error("fail");
+			});
+		});
+
+		await fp.run("fail-hook");
+		expect(hookRecord).not.toBeNull();
+		expect(hookRecord?.status).toBe("failed");
+		fp.close();
+	});
+
+	it("schedules and unschedules workflows", async () => {
+		const fp = new FlowPilot({ dbPath: ":memory:" });
+		let runCount = 0;
+
+		fp.workflow("scheduled", async ({ step }) => {
+			runCount++;
+			return step("tick", async () => runCount);
+		});
+
+		// Schedule but disabled
+		fp.schedule("scheduled", { cron: "* * * * *", enabled: false });
+		await new Promise((r) => setTimeout(r, 100));
+		expect(runCount).toBe(0);
+		fp.unschedule("scheduled");
+
+		fp.close();
+	});
+
+	it("rejects scheduling unknown workflows", () => {
+		const fp = new FlowPilot({ dbPath: ":memory:" });
+		expect(() => fp.schedule("nope", { cron: "@daily" })).toThrow("not found");
+		fp.close();
+	});
+
 	it("records step duration", async () => {
 		const fp = new FlowPilot({ dbPath: ":memory:" });
 

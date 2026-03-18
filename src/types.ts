@@ -102,12 +102,23 @@ export interface WorkflowContext<TInput = unknown> {
 	input: TInput;
 	/** Run a named step */
 	step<T>(id: string, fn: (ctx: StepContext) => T | Promise<T>, config?: StepConfig): Promise<T>;
+	/** Run multiple steps in parallel */
+	parallel<T extends readonly unknown[]>(
+		...steps: { [K in keyof T]: ParallelStepDef<T[K]> }
+	): Promise<T>;
 	/** AI client for LLM calls */
 	ai: AIClient;
 	/** Structured logger */
 	log: Logger;
 	/** The workflow execution ID */
 	executionId: ExecutionId;
+}
+
+/** Definition for a step to run in parallel */
+export interface ParallelStepDef<T = unknown> {
+	id: string;
+	fn: (ctx: StepContext) => T | Promise<T>;
+	config?: StepConfig;
 }
 
 /** A workflow definition */
@@ -124,6 +135,16 @@ export interface Logger {
 	debug(message: string, data?: Record<string, unknown>): void;
 }
 
+/** Event hooks for workflow lifecycle */
+export interface WorkflowHooks {
+	/** Called after a workflow completes successfully */
+	onSuccess?: (record: ExecutionRecord) => void | Promise<void>;
+	/** Called after a workflow fails */
+	onFailure?: (record: ExecutionRecord) => void | Promise<void>;
+	/** Called after every workflow execution (success or failure) */
+	onComplete?: (record: ExecutionRecord) => void | Promise<void>;
+}
+
 /** Configuration for the FlowPilot engine */
 export interface FlowPilotConfig {
 	/** SQLite database path. Default: ./flowpilot.db */
@@ -136,4 +157,16 @@ export interface FlowPilotConfig {
 	defaultTimeout?: number;
 	/** Log level */
 	logLevel?: "debug" | "info" | "warn" | "error";
+	/** Global event hooks */
+	hooks?: WorkflowHooks;
+}
+
+/** Cron schedule definition */
+export interface ScheduleConfig {
+	/** Cron expression (e.g. every 5 minutes, @daily, @hourly) */
+	cron: string;
+	/** Input to pass to the workflow on each run */
+	input?: unknown;
+	/** Whether the schedule is currently active */
+	enabled?: boolean;
 }

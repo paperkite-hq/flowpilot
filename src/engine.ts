@@ -9,12 +9,15 @@ import type {
 	ExecutionStatus,
 	FlowPilotConfig,
 	Logger,
+	ParallelStepDef,
+	ScheduleConfig,
 	StepConfig,
 	StepContext,
 	StepResult,
 	StepStatus,
 	WorkflowContext,
 	WorkflowDefinition,
+	WorkflowHooks,
 } from "./types.ts";
 
 function generateId(): string {
@@ -27,12 +30,18 @@ export class FlowPilot {
 	private store: Store;
 	private logger: Logger;
 	private aiClient: AIClient;
+	private schedules = new Map<
+		string,
+		{ config: ScheduleConfig; timer: ReturnType<typeof setInterval> | null }
+	>();
+	private hooks: WorkflowHooks;
 
 	constructor(config: FlowPilotConfig = {}) {
 		this.config = config;
 		this.logger = createLogger("flowpilot", config.logLevel ?? "info");
 		this.store = new Store(config.dbPath ?? "./flowpilot.db");
 		this.aiClient = createAIClient(config.ai);
+		this.hooks = config.hooks ?? {};
 	}
 
 	/** Register a workflow definition */
@@ -81,6 +90,16 @@ export class FlowPilot {
 			): Promise<T> => {
 				return this.executeStep(stepId, fn, config, steps, executionId, stepLog);
 			},
+			parallel: async <T extends readonly unknown[]>(
+				...stepDefs: { [K in keyof T]: ParallelStepDef<T[K]> }
+			): Promise<T> => {
+				stepLog.info(`Running ${stepDefs.length} steps in parallel`);
+				const promises = stepDefs.map((def) =>
+					this.executeStep(def.id, def.fn, def.config, steps, executionId, stepLog),
+				);
+				const results = await Promise.all(promises);
+				return results as unknown as T;
+			},
 		};
 
 		const start = performance.now();
@@ -114,6 +133,24 @@ export class FlowPilot {
 		};
 
 		this.store.saveExecution(record);
+
+		// Fire lifecycle hooks
+		try {
+			if (status === "completed" && this.hooks.onSuccess) {
+				await this.hooks.onSuccess(record);
+			}
+			if (status === "failed" && this.hooks.onFailure) {
+				await this.hooks.onFailure(record);
+			}
+			if (this.hooks.onComplete) {
+				await this.hooks.onComplete(record);
+			}
+		} catch (hookErr) {
+			this.logger.error("Hook error", {
+				error: hookErr instanceof Error ? hookErr.message : String(hookErr),
+			});
+		}
+
 		return record;
 	}
 
@@ -194,10 +231,111 @@ export class FlowPilot {
 		return this.store.listExecutions(workflowId, limit);
 	}
 
-	/** Close the database connection */
+	/** Schedule a workflow to run on a cron expression */
+	schedule(workflowId: string, config: ScheduleConfig): void {
+		if (!this.workflows.has(workflowId)) {
+			throw new Error(`Workflow "${workflowId}" not found. Register it before scheduling.`);
+		}
+		if (this.schedules.has(workflowId)) {
+			throw new Error(`Workflow "${workflowId}" is already scheduled. Unschedule first.`);
+		}
+
+		const intervalMs = parseCronToMs(config.cron);
+		const enabled = config.enabled !== false;
+
+		this.logger.info(`Scheduling "${workflowId}" every ${intervalMs}ms (cron: ${config.cron})`, {
+			enabled,
+		});
+
+		const timer = enabled
+			? setInterval(async () => {
+					this.logger.info(`Scheduled run of "${workflowId}"`);
+					try {
+						await this.run(workflowId, config.input);
+					} catch (err) {
+						this.logger.error(`Scheduled "${workflowId}" failed`, {
+							error: err instanceof Error ? err.message : String(err),
+						});
+					}
+				}, intervalMs)
+			: null;
+
+		this.schedules.set(workflowId, { config, timer });
+	}
+
+	/** Remove a scheduled workflow */
+	unschedule(workflowId: string): void {
+		const entry = this.schedules.get(workflowId);
+		if (entry?.timer) {
+			clearInterval(entry.timer);
+		}
+		this.schedules.delete(workflowId);
+		this.logger.info(`Unscheduled "${workflowId}"`);
+	}
+
+	/** Close the database connection and stop all schedules */
 	close(): void {
+		for (const [id] of this.schedules) {
+			this.unschedule(id);
+		}
 		this.store.close();
 	}
+}
+
+/**
+ * Parse simple cron expressions to interval milliseconds.
+ * Supports: "* / N * * * *" patterns for minutes, and common presets.
+ * For full cron support, use a cron library — this covers the 80% case.
+ */
+function parseCronToMs(cron: string): number {
+	const presets: Record<string, number> = {
+		"@yearly": 365.25 * 24 * 60 * 60 * 1000,
+		"@monthly": 30 * 24 * 60 * 60 * 1000,
+		"@weekly": 7 * 24 * 60 * 60 * 1000,
+		"@daily": 24 * 60 * 60 * 1000,
+		"@hourly": 60 * 60 * 1000,
+		"@every_5m": 5 * 60 * 1000,
+		"@every_15m": 15 * 60 * 1000,
+		"@every_30m": 30 * 60 * 1000,
+	};
+
+	if (presets[cron]) return presets[cron];
+
+	// Parse standard 5-field cron: minute hour day month weekday
+	const parts = cron.trim().split(/\s+/);
+	if (parts.length !== 5) {
+		throw new Error(
+			`Invalid cron expression: "${cron}". Use 5 fields or a preset (@daily, @hourly, etc.)`,
+		);
+	}
+
+	const [minute] = parts;
+
+	// */N in minute field = every N minutes
+	const everyMinMatch = minute?.match(/^\*\/(\d+)$/);
+	if (everyMinMatch) {
+		return Number.parseInt(everyMinMatch[1] ?? "1", 10) * 60 * 1000;
+	}
+
+	// * * * * * = every minute
+	if (parts.every((p) => p === "*")) {
+		return 60 * 1000;
+	}
+
+	// 0 * * * * = every hour
+	if (minute === "0" && parts.slice(1).every((p) => p === "*")) {
+		return 60 * 60 * 1000;
+	}
+
+	// 0 */N * * * = every N hours
+	const everyHourMatch = parts[1]?.match(/^\*\/(\d+)$/);
+	if (minute === "0" && everyHourMatch) {
+		return Number.parseInt(everyHourMatch[1] ?? "1", 10) * 60 * 60 * 1000;
+	}
+
+	throw new Error(
+		`Unsupported cron expression: "${cron}". Use */N for intervals, presets (@daily, @hourly), or simple patterns.`,
+	);
 }
 
 async function withTimeout<T>(

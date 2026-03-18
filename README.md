@@ -7,6 +7,9 @@ Bun-native AI workflow engine for TypeScript. Define, execute, and observe multi
 - **TypeScript-first** — define workflows as code, not YAML or JSON
 - **Bun-native** — built for Bun's runtime, including `bun:sqlite` for zero-dependency persistence
 - **AI-native** — first-class LLM integration (Anthropic Claude, OpenAI) available in every step
+- **Parallel steps** — run steps concurrently with `ctx.parallel()`, collect typed results
+- **Cron scheduling** — schedule workflows with cron expressions or presets (`@daily`, `@hourly`)
+- **Event hooks** — `onSuccess`, `onFailure`, `onComplete` lifecycle callbacks
 - **Reliable** — automatic retry with exponential backoff, per-step timeouts
 - **Observable** — execution history stored in SQLite, queryable via API or CLI
 - **Lightweight** — zero npm dependencies, runs anywhere Bun runs
@@ -82,6 +85,66 @@ fp.workflow("summarize", async ({ step, input }) => {
 await fp.run("summarize", { url: "https://example.com" });
 ```
 
+## Parallel Steps
+
+Run multiple steps concurrently and collect typed results:
+
+```typescript
+fp.workflow("fetch-all", async ({ step, parallel }) => {
+  // These three steps run at the same time
+  const [users, posts, comments] = await parallel(
+    { id: "users", fn: async () => fetch("/api/users").then(r => r.json()) },
+    { id: "posts", fn: async () => fetch("/api/posts").then(r => r.json()) },
+    { id: "comments", fn: async () => fetch("/api/comments").then(r => r.json()) },
+  );
+
+  // This step runs after all parallel steps complete
+  return step("merge", async () => ({ users, posts, comments }));
+});
+```
+
+Each parallel step gets its own retry config, timeout, and execution trace — just like sequential steps.
+
+## Cron Scheduling
+
+Schedule workflows to run automatically:
+
+```typescript
+const fp = new FlowPilot({
+  hooks: {
+    onFailure: (record) => sendAlert(record.error),
+  },
+});
+
+fp.workflow("health-check", async ({ step }) => {
+  return step("ping", async () => {
+    const res = await fetch("https://api.example.com/health");
+    if (!res.ok) throw new Error(`API down: ${res.status}`);
+    return { status: "ok" };
+  });
+});
+
+// Run every 5 minutes
+fp.schedule("health-check", { cron: "*/5 * * * *" });
+
+// Presets: @daily, @hourly, @weekly, @every_5m, @every_15m, @every_30m
+fp.schedule("cleanup", { cron: "@daily" });
+```
+
+## Event Hooks
+
+React to workflow lifecycle events:
+
+```typescript
+const fp = new FlowPilot({
+  hooks: {
+    onSuccess: (record) => console.log(`${record.workflowId} completed in ${record.durationMs}ms`),
+    onFailure: (record) => sendSlackAlert(record.error),
+    onComplete: (record) => metrics.record(record),
+  },
+});
+```
+
 ## Retry & Timeout
 
 Every step supports configurable retry with exponential backoff and timeouts:
@@ -153,6 +216,13 @@ const fp = new FlowPilot({
 
   // Log level
   logLevel: "info", // "debug" | "info" | "warn" | "error"
+
+  // Lifecycle hooks
+  hooks: {
+    onSuccess: (record) => { /* ... */ },
+    onFailure: (record) => { /* ... */ },
+    onComplete: (record) => { /* ... */ },
+  },
 });
 ```
 
