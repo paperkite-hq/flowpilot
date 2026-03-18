@@ -2,7 +2,7 @@
 
 The simplest possible FlowPilot workflow.
 
-<<< ../examples/hello-world.ts
+<<< ../../examples/hello-world.ts
 
 ## What it does
 

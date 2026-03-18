@@ -2,7 +2,7 @@
 
 Process incoming webhook events with validation, routing, and notification.
 
-<<< ../examples/webhook-handler.ts
+<<< ../../examples/webhook-handler.ts
 
 ## What it does
 

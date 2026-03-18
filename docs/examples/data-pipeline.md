@@ -2,7 +2,7 @@
 
 A classic ETL (Extract → Transform → Load) pipeline with validation and error handling.
 
-<<< ../examples/data-pipeline.ts
+<<< ../../examples/data-pipeline.ts
 
 ## What it does
 

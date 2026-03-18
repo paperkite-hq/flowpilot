@@ -2,7 +2,7 @@
 
 Fetch a web page and summarize it using an LLM.
 
-<<< ../examples/ai-summarizer.ts
+<<< ../../examples/ai-summarizer.ts
 
 ## What it does
 
