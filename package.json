@@ -36,12 +36,13 @@
 		"openai",
 		"sqlite"
 	],
+	"author": "Paperkite Technologies LLC",
 	"license": "AGPL-3.0-or-later",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/paperkite-hq/flowpilot"
 	},
-	"homepage": "https://flowpilot.dev",
+	"homepage": "https://paperkite-hq.github.io/flowpilot/",
 	"bugs": {
 		"url": "https://github.com/paperkite-hq/flowpilot/issues"
 	},

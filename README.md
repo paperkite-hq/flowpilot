@@ -11,6 +11,27 @@ Bun-native AI workflow engine for TypeScript. Define, execute, and observe multi
 - **Observable** — execution history stored in SQLite, queryable via API or CLI
 - **Lightweight** — zero npm dependencies, runs anywhere Bun runs
 
+## Installation
+
+```bash
+# Clone and link locally
+git clone https://github.com/paperkite-hq/flowpilot.git
+cd flowpilot
+bun install
+bun link
+
+# Then in your project:
+bun link flowpilot
+```
+
+Or use it directly without installing:
+
+```bash
+# Run an example
+git clone https://github.com/paperkite-hq/flowpilot.git
+cd flowpilot && bun run examples/hello-world.ts
+```
+
 ## Quick Start
 
 ```typescript

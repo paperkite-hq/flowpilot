@@ -1,0 +1,10 @@
+docs/
+examples/
+launch/
+*.test.ts
+docker-compose.yml
+Dockerfile
+CONTRIBUTING.md
+.github/
+tsconfig.json
+biome.json
