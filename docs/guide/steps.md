@@ -91,6 +91,48 @@ interface StepResult<T = unknown> {
 }
 ```
 
+## Parallel steps
+
+Run multiple steps concurrently with `ctx.parallel()`. Results are typed and returned in order:
+
+```typescript
+fp.workflow("fetch-all", async ({ step, parallel }) => {
+  // These three steps run at the same time
+  const [users, posts, comments] = await parallel(
+    { id: "users", fn: async () => fetch("/api/users").then(r => r.json()) },
+    { id: "posts", fn: async () => fetch("/api/posts").then(r => r.json()) },
+    { id: "comments", fn: async () => fetch("/api/comments").then(r => r.json()) },
+  );
+
+  // This step runs after all parallel steps complete
+  return step("merge", async () => ({ users, posts, comments }));
+});
+```
+
+Each parallel step:
+- Runs concurrently with all other parallel steps
+- Gets its own retry config and timeout
+- Is recorded individually in the execution trace
+- If any step fails, the entire `parallel()` call fails (via `Promise.all`)
+
+You can mix parallel and sequential steps freely:
+
+```typescript
+fp.workflow("mixed", async ({ step, parallel }) => {
+  // Sequential: validate input
+  const config = await step("validate", async () => loadConfig());
+
+  // Parallel: fetch data from multiple sources
+  const [a, b] = await parallel(
+    { id: "source-a", fn: async () => fetchA(config) },
+    { id: "source-b", fn: async () => fetchB(config), config: { retry: { maxAttempts: 3 } } },
+  );
+
+  // Sequential: merge results
+  return step("merge", async () => merge(a, b));
+});
+```
+
 ## Dynamic steps
 
 Steps can be created dynamically based on data:

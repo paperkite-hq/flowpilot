@@ -36,6 +36,8 @@ export default defineConfig({
 				{
 					text: "Advanced",
 					items: [
+						{ text: "Scheduling", link: "/guide/scheduling" },
+						{ text: "Event Hooks", link: "/guide/hooks" },
 						{ text: "CLI", link: "/guide/cli" },
 						{ text: "Docker", link: "/guide/docker" },
 					],
@@ -58,6 +60,8 @@ export default defineConfig({
 						{ text: "Hello World", link: "/examples/hello-world" },
 						{ text: "AI Summarizer", link: "/examples/ai-summarizer" },
 						{ text: "Data Pipeline", link: "/examples/data-pipeline" },
+						{ text: "Parallel Steps", link: "/examples/parallel-steps" },
+						{ text: "Scheduled Workflow", link: "/examples/scheduled-workflow" },
 						{ text: "Webhook Handler", link: "/examples/webhook-handler" },
 					],
 				},
