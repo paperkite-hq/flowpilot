@@ -1,0 +1,13 @@
+services:
+  flowpilot:
+    build: .
+    volumes:
+      - ./workflows:/app/workflows
+      - flowpilot-data:/app/data
+    environment:
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+    command: ["workflows/my-workflow.ts"]
+
+volumes:
+  flowpilot-data:
